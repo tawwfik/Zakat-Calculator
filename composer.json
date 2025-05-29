@@ -1,6 +1,15 @@
 {
     "name": "tawwfik/zakat-calculator",
-    "description": "A Laravel package for calculating zakat on money, gold, and silver",
+    "description": "A Laravel package for calculating zakat on money, gold, and silver.",
+    "keywords": [
+        "laravel",
+        "zakat",
+        "calculator",
+        "gold",
+        "silver",
+        "money",
+        "islamic"
+    ],
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -9,15 +18,20 @@
             "email": "your.email@example.com"
         }
     ],
+    "homepage": "https://github.com/tawwfik/Zakat-Calculator",
+    "support": {
+        "issues": "https://github.com/tawwfik/Zakat-Calculator/issues",
+        "source": "https://github.com/tawwfik/Zakat-Calculator"
+    },
     "require": {
         "php": "^8.0",
-       "illuminate/support": "^9.0|^10.0|^11.0",
-       "illuminate/config": "^9.0|^10.0|^11.0",
+        "illuminate/support": "^9.0|^10.0|^11.0",
+        "illuminate/config": "^9.0|^10.0|^11.0",
         "illuminate/cache": "^9.0|^10.0|^11.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.0",
-        "orchestra/testbench": "^7.0|^8.0",
+        "orchestra/testbench": "^7.0|^8.0|^9.0",
         "mockery/mockery": "^1.6"
     },
     "autoload": {
