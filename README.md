@@ -7,7 +7,7 @@ A Laravel package for calculating zakat on money, gold, silver, business assets,
 You can install the package via composer:
 
 ```bash
-composer require tawfik/zakat-calculator
+composer require tawwfik/zakat-calculator
 ```
 
 The package will automatically register its service provider.

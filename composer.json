@@ -1,5 +1,5 @@
 {
-    "name": "tawfik/zakat-calculator",
+    "name": "tawwfik/zakat-calculator",
     "description": "A Laravel package for calculating zakat on money, gold, and silver",
     "type": "library",
     "license": "MIT",
