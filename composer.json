@@ -1,23 +1,22 @@
 {
     "name": "tawfik/zakat-calculator",
-    "description": "Laravel package to calculate zakat on money, gold, and silver",
+    "description": "A Laravel package for calculating zakat on money, gold, and silver",
     "type": "library",
     "license": "MIT",
     "authors": [
         {
             "name": "Tawfik",
-            "email": "youremail@example.com"
+            "email": "your.email@example.com"
         }
     ],
     "require": {
-        "php": "^7.4|^8.0",
-        "illuminate/support": "^8.0|^9.0|^10.0",
-        "illuminate/config": "^8.0|^9.0|^10.0",
-        "illuminate/cache": "^8.0|^9.0|^10.0"
+        "php": "^8.0",
+        "illuminate/config": "^9.0|^10.0",
+        "illuminate/cache": "^9.0|^10.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.0",
-        "orchestra/testbench": "^6.0|^7.0|^8.0",
+        "orchestra/testbench": "^7.0|^8.0",
         "mockery/mockery": "^1.6"
     },
     "autoload": {
@@ -34,15 +33,9 @@
         "laravel": {
             "providers": [
                 "Tawfik\\ZakatCalculator\\ZakatServiceProvider"
-            ],
-            "aliases": {
-                "Zakat": "Tawfik\\ZakatCalculator\\Facades\\Zakat"
-            }
+            ]
         }
     },
     "minimum-stability": "dev",
-    "prefer-stable": true,
-    "scripts": {
-        "test": "phpunit"
-    }
+    "prefer-stable": true
 }

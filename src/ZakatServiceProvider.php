@@ -1,28 +1,34 @@
 <?php
-
 namespace Tawfik\ZakatCalculator;
 
 use Illuminate\Support\ServiceProvider;
 
 class ZakatServiceProvider extends ServiceProvider
 {
-    public function register()
+    /**
+     * Register services.
+     */
+    public function register(): void
     {
-        $this->app->singleton('zakat-calculator', function ($app) {
-            return new ZakatCalculator();
-        });
+        $this->mergeConfigFrom(
+            __DIR__ . '/../config/zakat.php', 'zakat'
+        );
 
-        // لنشر ملف الإعداد إذا أردت مستقبلاً
-        $this->mergeConfigFrom(__DIR__ . '/../config/zakat.php', 'zakat');
+        $this->app->singleton(ZakatCalculator::class, function ($app) {
+            return new ZakatCalculator(
+                $app['cache'],
+                $app['config']
+            );
+        });
     }
 
-    public function boot()
+    /**
+     * Bootstrap services.
+     */
+    public function boot(): void
     {
-        // نشر ملف الإعداد
         $this->publishes([
             __DIR__ . '/../config/zakat.php' => config_path('zakat.php'),
         ], 'config');
-        
-        // لا يتم تحميل أي Routes
     }
 }

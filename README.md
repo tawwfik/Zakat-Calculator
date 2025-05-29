@@ -1,18 +1,6 @@
-# Laravel Zakat Calculator
+# Zakat Calculator for Laravel
 
-A comprehensive Laravel package for calculating Zakat on various assets including money, gold, silver, business assets, and agricultural products.
-
-## Features
-
-- Calculate Zakat on cash
-- Calculate Zakat on gold and silver
-- Calculate Zakat on business assets
-- Calculate Zakat on agricultural products
-- Support for different calculation methods (Hanafi, Shafi, Maliki, Hanbali)
-- Configurable nisab thresholds
-- Caching support for gold and silver prices
-- Input validation and error handling
-- Support for different currencies and weight units
+A Laravel package for calculating zakat on money, gold, silver, business assets, and agricultural products.
 
 ## Installation
 
@@ -24,9 +12,9 @@ composer require tawfik/zakat-calculator
 
 The package will automatically register its service provider.
 
-## Configuration
+### Publishing Configuration
 
-Publish the configuration file:
+You can publish the configuration file using:
 
 ```bash
 php artisan vendor:publish --provider="Tawfik\ZakatCalculator\ZakatServiceProvider" --tag="config"
@@ -41,70 +29,54 @@ This will create a `config/zakat.php` file in your config directory.
 ```php
 use Tawfik\ZakatCalculator\ZakatCalculator;
 
-$calculator = new ZakatCalculator();
+class ZakatController extends Controller
+{
+    protected $calculator;
 
-$result = $calculator
-    ->setCash(1000)
-    ->setGoldItems([
-        ['weight' => 100, 'karat' => 24],
-        ['weight' => 50, 'karat' => 18]
-    ])
-    ->setSilverWeight(500)
-    ->setGoldPrice(50) // per gram
-    ->setSilverPrice(0.5) // per gram
-    ->calculate();
+    public function __construct(ZakatCalculator $calculator)
+    {
+        $this->calculator = $calculator;
+    }
+
+    public function calculate(Request $request)
+    {
+        $result = $this->calculator
+            ->setCash($request->cash)
+            ->setGoldItems([
+                ['weight' => 100, 'karat' => 24],
+                ['weight' => 50, 'karat' => 18]
+            ])
+            ->setSilverWeight(500)
+            ->setBusinessAssets([
+                'inventory' => 5000,
+                'receivables' => 2000,
+                'cash_at_bank' => 3000
+            ])
+            ->setAgriculturalProducts([
+                ['value' => 10000, 'irrigated' => true],
+                ['value' => 20000, 'irrigated' => false]
+            ])
+            ->calculate();
+
+        return response()->json($result);
+    }
+}
 ```
 
-### Business Assets
+### Available Methods
 
-```php
-$calculator->setBusinessAssets([
-    'inventory' => 5000,
-    'receivables' => 2000,
-    'cash_at_bank' => 10000,
-    'cash_in_hand' => 2000
-]);
-```
+- `setCash(float $cash)`: Set cash amount
+- `setGoldItems(array $goldItems)`: Set gold items with weight and karat
+- `setSilverWeight(float $silverWeight)`: Set silver weight
+- `setGoldPrice(float $goldPrice)`: Set gold price per gram
+- `setSilverPrice(float $silverPrice)`: Set silver price per gram
+- `setBusinessAssets(array $assets)`: Set business assets
+- `setAgriculturalProducts(array $products)`: Set agricultural products
+- `setCalculationMethod(string $method)`: Set calculation method (hanafi, shafi, maliki, hanbali)
 
-### Agricultural Products
+### Calculation Result
 
-```php
-$calculator->setAgriculturalProducts([
-    [
-        'value' => 10000,
-        'irrigated' => true // 5% rate
-    ],
-    [
-        'value' => 5000,
-        'irrigated' => false // 10% rate
-    ]
-]);
-```
-
-### Different Calculation Methods
-
-```php
-$calculator->setCalculationMethod('hanafi'); // or 'shafi', 'maliki', 'hanbali'
-```
-
-## Configuration Options
-
-The package provides several configuration options in `config/zakat.php`:
-
-- Default gold and silver prices
-- Nisab thresholds
-- Currency settings
-- Weight units
-- Calculation precision
-- Supported gold karats
-- Cache settings
-- Calculation methods
-- Business assets settings
-- Agricultural products rates
-
-## Response Format
-
-The `calculate()` method returns an array with the following structure:
+The `calculate()` method returns an array with the following information:
 
 ```php
 [
@@ -121,27 +93,23 @@ The `calculate()` method returns an array with the following structure:
 ]
 ```
 
-## Error Handling
+## Configuration
 
-The package throws `InvalidInputException` for invalid inputs:
+The package configuration file (`config/zakat.php`) includes the following settings:
 
-```php
-use Tawfik\ZakatCalculator\Exceptions\InvalidInputException;
+- Default prices for gold and silver
+- Nisab thresholds
+- Supported gold karats
+- Agricultural rates
+- Calculation methods
+- Cache settings
+- Precision settings
 
-try {
-    $calculator->setCash(-1000); // Will throw InvalidInputException
-} catch (InvalidInputException $e) {
-    // Handle the error
-}
+## Testing
+
+```bash
+composer test
 ```
-
-## Contributing
-
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## Security
-
-If you discover any security related issues, please email youremail@example.com instead of using the issue tracker.
 
 ## License
 
