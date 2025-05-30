@@ -95,15 +95,80 @@ The `calculate()` method returns an array with the following information:
 
 ## Configuration
 
-The package configuration file (`config/zakat.php`) includes the following settings:
+After publishing the configuration file, you can customize the following settings in `config/zakat.php`:
 
-- Default prices for gold and silver
-- Nisab thresholds
-- Supported gold karats
-- Agricultural rates
-- Calculation methods
-- Cache settings
-- Precision settings
+### Default Prices
+```php
+'default_prices' => [
+    'gold'   => 0.00, // Set your default gold price per gram
+    'silver' => 0.00, // Set your default silver price per gram
+],
+```
+
+### Nisab Thresholds
+```php
+'nisab' => [
+    'gold'   => 85,  // grams of gold
+    'silver' => 595, // grams of silver
+],
+```
+
+### Currency Settings
+```php
+'currency' => [
+    'code'     => 'SAR',    // Currency code
+    'symbol'   => 'ر.س',      // Currency symbol
+    'position' => 'before', // Symbol position: 'before' or 'after'
+],
+```
+
+### Weight Unit
+```php
+'weight_unit' => 'gram', // 'gram' or 'ounce'
+```
+
+### Calculation Precision
+```php
+'precision' => 2, // Number of decimal places
+```
+
+### Supported Gold Karats
+```php
+'supported_karats' => [24, 22, 21, 18, 14, 12, 10],
+```
+
+### Cache Settings
+```php
+'cache' => [
+    'enabled' => true,
+    'ttl'     => 3600, // Cache time-to-live in seconds
+],
+```
+
+### Calculation Methods
+```php
+'calculation_methods' => [
+    'default' => 'hanafi', // Available: 'hanafi', 'shafi', 'maliki', 'hanbali'
+],
+```
+
+### Business Assets
+```php
+'business' => [
+    'inventory'    => true,    // Include inventory in calculation
+    'receivables'  => true,    // Include receivables in calculation
+    'cash_at_bank' => true,    // Include bank cash in calculation
+    'cash_in_hand' => true,    // Include cash in hand in calculation
+],
+```
+
+### Agricultural Products
+```php
+'agricultural' => [
+    'irrigated_rate'     => 0.05, // 5% rate for irrigated crops
+    'non_irrigated_rate' => 0.1,  // 10% rate for non-irrigated crops
+],
+```
 
 ## Testing
 

@@ -24,8 +24,8 @@ return [
 
     // Currency settings
     'currency'            => [
-        'code'     => 'USD',
-        'symbol'   => '$',
+        'code'     => 'SAR',
+        'symbol'   => 'ر.س',
         'position' => 'before', // 'before' or 'after'
     ],
 
