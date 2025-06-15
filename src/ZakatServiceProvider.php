@@ -1,8 +1,8 @@
 <?php
 namespace Tawfik\ZakatCalculator;
 
-use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\ServiceProvider;
+use Tawfik\ZakatCalculator\ZakatCalculator;
 
 class ZakatServiceProvider extends ServiceProvider
 {
@@ -17,7 +17,7 @@ class ZakatServiceProvider extends ServiceProvider
 
         $this->app->singleton(ZakatCalculator::class, function ($app) {
             return new ZakatCalculator(
-                $app->make(CacheRepository::class),
+                $app['cache.store'],
                 $app['config']
             );
         });
@@ -28,8 +28,10 @@ class ZakatServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->publishes([
-            __DIR__ . '/../config/zakat.php' => config_path('zakat.php'),
-        ], 'config');
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__ . '/../config/zakat.php' => config_path('zakat.php'),
+            ], 'config');
+        }
     }
 }

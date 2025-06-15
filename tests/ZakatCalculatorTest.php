@@ -10,133 +10,259 @@ use Tawfik\ZakatCalculator\ZakatCalculator;
 
 class ZakatCalculatorTest extends TestCase
 {
-    protected ZakatCalculator $calculator;
-    protected CacheRepository $cache;
-    protected ConfigRepository $config;
+    protected $config;
+    protected $cache;
+    protected $calculator;
 
     protected function setUp(): void
     {
         parent::setUp();
-
-        $this->cache  = Mockery::mock(CacheRepository::class);
         $this->config = Mockery::mock(ConfigRepository::class);
+        $this->cache  = Mockery::mock(CacheRepository::class);
 
-        // Set up default config values
-        $this->config->shouldReceive('get')
-            ->with('zakat.calculation_methods.default', 'hanafi')
-            ->andReturn('hanafi');
-        $this->config->shouldReceive('get')
-            ->with('zakat.supported_karats')
-            ->andReturn([24, 22, 21, 18]);
-        $this->config->shouldReceive('get')
-            ->with('zakat.agricultural.irrigated_rate')
-            ->andReturn(0.05);
-        $this->config->shouldReceive('get')
-            ->with('zakat.agricultural.non_irrigated_rate')
-            ->andReturn(0.1);
-        $this->config->shouldReceive('get')
-            ->with('zakat.nisab.gold')
-            ->andReturn(87.48);
-        $this->config->shouldReceive('get')
-            ->with('zakat.precision', 2)
-            ->andReturn(2);
-        $this->config->shouldReceive('get')
-            ->with('zakat.cache.enabled')
-            ->andReturn(false);
-        $this->config->shouldReceive('get')
-            ->with('zakat.default_prices.gold')
-            ->andReturn(50.0);
-        $this->config->shouldReceive('get')
-            ->with('zakat.default_prices.silver')
-            ->andReturn(0.5);
+        // Set up config mock to handle any get() call with default values
+        $this->config->shouldReceive('get')->andReturnUsing(function ($key, $default = null) {
+            $defaults = [
+                'zakat.nisab.gold'                      => 85,
+                'zakat.nisab.silver'                    => 595,
+                'zakat.cache.enabled'                   => true,
+                'zakat.cache.ttl'                       => 3600,
+                'zakat.default_prices.gold'             => 100,
+                'zakat.default_prices.silver'           => 10,
+                'zakat.agricultural.wasq_weights.wheat' => 60,
+                'zakat.agricultural.irrigated_rate'     => 0.05,
+                'zakat.agricultural.non_irrigated_rate' => 0.1,
+                'zakat.calculation_methods.default'     => 'hanafi',
+                'zakat.supported_karats'                => [24, 22, 21, 18, 14, 12, 10],
+                'zakat.business.include_inventory'      => true,
+                'zakat.business.include_receivables'    => true,
+                'zakat.business.include_cash_at_bank'   => true,
+                'zakat.business.include_cash_in_hand'   => true,
+            ];
 
-        $this->calculator = new ZakatCalculator($this->cache, $this->config);
+            return $defaults[$key] ?? $default;
+        });
+
+        // Set up cache expectations
+        $this->cache->shouldReceive('remember')
+            ->with('zakat.gold_price', 3600, Mockery::type('Closure'))
+            ->andReturnUsing(function ($key, $ttl, $callback) {
+                return $callback();
+            });
+
+        $this->cache->shouldReceive('remember')
+            ->with('zakat.silver_price', 3600, Mockery::type('Closure'))
+            ->andReturnUsing(function ($key, $ttl, $callback) {
+                return $callback();
+            });
+
+        $this->cache->shouldReceive('put')
+            ->with('zakat.gold_price', Mockery::any(), 3600)
+            ->andReturn(true);
+
+        $this->cache->shouldReceive('put')
+            ->with('zakat.silver_price', Mockery::any(), 3600)
+            ->andReturn(true);
+
+        $this->calculator = new ZakatCalculator($this->config, $this->cache);
     }
 
-    public function testBasicCalculation()
+    protected function tearDown(): void
     {
-        $result = $this->calculator
-            ->setCash(1000)
-            ->setGoldItems([
-                ['weight' => 100, 'karat' => 24],
-                ['weight' => 50, 'karat' => 18],
-            ])
-            ->setSilverWeight(500)
-            ->calculate();
-
-        $this->assertEquals(1000, $result['cash']);
-        $this->assertEquals(6875.0, $result['gold_value']);  // (100 * 50) + (50 * 18/24 * 50)
-        $this->assertEquals(250.0, $result['silver_value']); // 500 * 0.5
-        $this->assertEquals(8125.0, $result['total']);
-        $this->assertEquals(4374.0, $result['nisab']); // 87.48 * 50
-        $this->assertTrue($result['zakat_due']);
-        $this->assertEquals(203.13, $result['zakat_amount']); // 8125 * 0.025
+        Mockery::close();
+        parent::tearDown();
     }
 
-    public function testNegativeCashThrowsException()
+    public function testCanCalculateCashZakat()
+    {
+        $this->calculator->setCashAmount(10000);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(250, $result['details']['cash']['zakat']);
+    }
+
+    public function testCanCalculateGoldZakat()
+    {
+        $this->calculator->addGoldItem(24, 100);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(250, $result['details']['gold']['zakat']);
+    }
+
+    public function testCanCalculateSilverZakat()
+    {
+        $this->calculator->setSilverWeight(600);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(150, $result['details']['silver']['zakat']);
+    }
+
+    public function testCanCalculateBusinessZakat()
+    {
+        $this->calculator->setBusinessAssets([
+            'inventory'    => 10000,
+            'receivables'  => 0,
+            'cash_at_bank' => 0,
+        ]);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(250, $result['details']['business']['zakat']);
+    }
+
+    public function testCanCalculateAgriculturalZakat()
+    {
+        $this->calculator->setAgriculturalProducts([
+            'wheat' => [
+                'weight'       => 400,
+                'is_irrigated' => true,
+            ],
+        ]);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(20, $result['details']['agricultural']['zakat']);
+    }
+
+    public function testThrowsExceptionForNegativeCashAmount()
     {
         $this->expectException(InvalidInputException::class);
-        $this->calculator->setCash(-100);
+        $this->calculator->setCashAmount(-1000);
     }
 
-    public function testInvalidGoldKaratThrowsException()
+    public function testThrowsExceptionForNegativeGoldPrice()
     {
         $this->expectException(InvalidInputException::class);
-        $this->calculator->setGoldItems([
-            ['weight' => 100, 'karat' => 14],
+        $this->calculator->setGoldPrice(-100);
+    }
+
+    public function testThrowsExceptionForNegativeSilverPrice()
+    {
+        $this->expectException(InvalidInputException::class);
+        $this->calculator->setSilverPrice(-10);
+    }
+
+    public function testThrowsExceptionForInvalidGoldKarat()
+    {
+        $this->expectException(InvalidInputException::class);
+        $this->calculator->addGoldItem(15, 100);
+    }
+
+    public function testThrowsExceptionForNegativeGoldWeight()
+    {
+        $this->expectException(InvalidInputException::class);
+        $this->calculator->addGoldItem(24, -100);
+    }
+
+    public function testThrowsExceptionForNegativeSilverWeight()
+    {
+        $this->expectException(InvalidInputException::class);
+        $this->calculator->setSilverWeight(-500);
+    }
+
+    public function testThrowsExceptionForNegativeBusinessAssets()
+    {
+        $this->expectException(InvalidInputException::class);
+        $this->calculator->setBusinessAssets([
+            'inventory'    => -1000,
+            'receivables'  => 0,
+            'cash_at_bank' => 0,
         ]);
     }
 
-    public function testBusinessAssetsCalculation()
-    {
-        $result = $this->calculator
-            ->setBusinessAssets([
-                'inventory'    => 5000,
-                'receivables'  => 2000,
-                'cash_at_bank' => 3000,
-            ])
-            ->calculate();
-
-        $this->assertEquals(10000.0, $result['business_value']);
-    }
-
-    public function testAgriculturalProductsCalculation()
-    {
-        $result = $this->calculator
-            ->setAgriculturalProducts([
-                ['value' => 10000, 'irrigated' => true],
-                ['value' => 20000, 'irrigated' => false],
-            ])
-            ->calculate();
-
-        $this->assertEquals(2500.0, $result['agricultural_value']); // (10000 * 0.05) + (20000 * 0.1)
-    }
-
-    public function testDifferentCalculationMethods()
-    {
-        $this->calculator->setCalculationMethod('shafi');
-        $result = $this->calculator->calculate();
-        $this->assertEquals('shafi', $result['calculation_method']);
-    }
-
-    public function testInvalidCalculationMethodThrowsException()
+    public function testThrowsExceptionForNegativeAgriculturalWeight()
     {
         $this->expectException(InvalidInputException::class);
-        $this->calculator->setCalculationMethod('invalid');
+        $this->calculator->setAgriculturalProducts([
+            'wheat' => [
+                'weight'       => -400,
+                'is_irrigated' => true,
+            ],
+        ]);
     }
 
-    public function testBelowNisabThreshold()
+    public function testItCalculatesGoldZakatCorrectly()
     {
-        $result = $this->calculator
-            ->setCash(1000)
-            ->setGoldItems([
-                ['weight' => 10, 'karat' => 24],
-            ])
-            ->calculate();
+        $this->calculator->addGoldItem(24, 100);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(250, $result['details']['gold']['zakat']);
+    }
 
-        $this->assertEquals(1500.0, $result['total']); // 1000 + (10 * 50)
-        $this->assertEquals(4374.0, $result['nisab']); // 87.48 * 50
-        $this->assertFalse($result['zakat_due']);
-        $this->assertEquals(0.0, $result['zakat_amount']);
+    public function testItCalculatesSilverZakatCorrectly()
+    {
+        $this->calculator->setSilverWeight(600);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(150, $result['details']['silver']['zakat']);
+    }
+
+    public function testItCalculatesBusinessZakatCorrectly()
+    {
+        $this->calculator->setBusinessAssets([
+            'inventory'    => 10000,
+            'receivables'  => 0,
+            'cash_at_bank' => 0,
+        ]);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(250, $result['details']['business']['zakat']);
+    }
+
+    public function testItCalculatesAgriculturalZakatCorrectly()
+    {
+        $this->calculator->setAgriculturalProducts([
+            'wheat' => [
+                'weight'       => 400,
+                'is_irrigated' => true,
+            ],
+        ]);
+        $result = $this->calculator->calculate();
+        $this->assertEquals(20, $result['details']['agricultural']['zakat']);
+    }
+
+    public function testItCalculatesTotalZakatCorrectly()
+    {
+        $this->calculator
+            ->setCashAmount(10000)
+            ->addGoldItem(24, 100)
+            ->setSilverWeight(600)
+            ->setBusinessAssets([
+                'inventory'    => 10000,
+                'receivables'  => 0,
+                'cash_at_bank' => 0,
+            ])
+            ->setAgriculturalProducts([
+                'wheat' => [
+                    'weight'       => 400,
+                    'is_irrigated' => true,
+                ],
+            ]);
+
+        $result = $this->calculator->calculate();
+        $this->assertEquals(920, $result['total_zakat']);
+    }
+
+    public function testItReturnsDetailedGoldCalculation()
+    {
+        $this->calculator->addGoldItem(24, 100);
+        $result = $this->calculator->calculate();
+        $this->assertArrayHasKey('items', $result['details']['gold']);
+        $this->assertArrayHasKey('zakat', $result['details']['gold']);
+    }
+
+    public function testItReturnsDetailedBusinessCalculation()
+    {
+        $this->calculator->setBusinessAssets([
+            'inventory'    => 10000,
+            'receivables'  => 0,
+            'cash_at_bank' => 0,
+        ]);
+        $result = $this->calculator->calculate();
+        $this->assertArrayHasKey('assets', $result['details']['business']);
+        $this->assertArrayHasKey('zakat', $result['details']['business']);
+    }
+
+    public function testItReturnsDetailedAgriculturalCalculation()
+    {
+        $this->calculator->setAgriculturalProducts([
+            'wheat' => [
+                'weight'       => 400,
+                'is_irrigated' => true,
+            ],
+        ]);
+        $result = $this->calculator->calculate();
+        $this->assertArrayHasKey('products', $result['details']['agricultural']);
+        $this->assertArrayHasKey('zakat', $result['details']['agricultural']);
     }
 }

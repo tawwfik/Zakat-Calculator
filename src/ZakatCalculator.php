@@ -4,274 +4,228 @@ namespace Tawfik\ZakatCalculator;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Tawfik\ZakatCalculator\Exceptions\InvalidInputException;
+use Tawfik\ZakatCalculator\Services\NisabService;
 
 class ZakatCalculator
 {
-    protected float $cash         = 0;
-    protected array $goldItems    = [];
-    protected float $silverWeight = 0;
-    protected float $goldPrice    = 0;
-    protected float $silverPrice  = 0;
-    protected string $calculationMethod;
-    protected array $businessAssets       = [];
-    protected array $agriculturalProducts = [];
-    protected CacheRepository $cache;
-    protected ConfigRepository $config;
+    protected $cache;
+    protected $config;
+    protected $nisabService;
+    protected $assets = [
+        'cash'         => 0,
+        'gold'         => [],
+        'silver'       => 0,
+        'business'     => [],
+        'agricultural' => [],
+    ];
 
-    public function __construct(CacheRepository $cache, ConfigRepository $config)
+    public function __construct(ConfigRepository $config, CacheRepository $cache)
     {
-        $this->cache             = $cache;
-        $this->config            = $config;
-        $this->calculationMethod = $this->config->get('zakat.calculation_methods.default', 'hanafi');
-        $this->loadDefaultPrices();
+        $this->config       = $config;
+        $this->cache        = $cache;
+        $this->nisabService = new NisabService($config, $cache);
     }
 
-    /**
-     * Set the cash amount for zakat calculation
-     *
-     * @param float $cash
-     * @return self
-     * @throws InvalidInputException
-     */
-    public function setCash(float $cash): self
+    public function setCashAmount(float $amount): self
     {
-        if ($cash < 0) {
-            throw InvalidInputException::negativeValue('cash');
+        if ($amount < 0) {
+            throw new InvalidInputException('Cash amount cannot be negative');
         }
-        $this->cash = $cash;
+        $this->assets['cash'] = $amount;
         return $this;
     }
 
-    /**
-     * Set gold items for zakat calculation
-     *
-     * @param array $goldItems Array of gold items with weight and karat
-     * @return self
-     * @throws InvalidInputException
-     */
-    public function setGoldItems(array $goldItems): self
+    public function setGoldPrice(float $price): self
     {
-        foreach ($goldItems as $item) {
-            if (! isset($item['weight']) || $item['weight'] < 0) {
-                throw InvalidInputException::negativeValue('gold weight');
-            }
-            if (! isset($item['karat']) || ! in_array($item['karat'], $this->config->get('zakat.supported_karats'))) {
-                throw InvalidInputException::invalidKarat($item['karat'] ?? 0);
-            }
+        if ($price < 0) {
+            throw new InvalidInputException('Gold price cannot be negative');
         }
-        $this->goldItems = $goldItems;
+        $this->nisabService->setGoldPrice($price);
         return $this;
     }
 
-    /**
-     * Set silver weight for zakat calculation
-     *
-     * @param float $silverWeight
-     * @return self
-     * @throws InvalidInputException
-     */
-    public function setSilverWeight(float $silverWeight): self
+    public function setSilverPrice(float $price): self
     {
-        if ($silverWeight < 0) {
-            throw InvalidInputException::negativeValue('silver weight');
+        if ($price < 0) {
+            throw new InvalidInputException('Silver price cannot be negative');
         }
-        $this->silverWeight = $silverWeight;
+        $this->nisabService->setSilverPrice($price);
         return $this;
     }
 
-    /**
-     * Set gold price per gram
-     *
-     * @param float $goldPrice
-     * @return self
-     * @throws InvalidInputException
-     */
-    public function setGoldPrice(float $goldPrice): self
+    public function addGoldItem(int $karat, float $weight): self
     {
-        if ($goldPrice < 0) {
-            throw InvalidInputException::negativeValue('gold price');
+        if (! in_array($karat, $this->config->get('zakat.supported_karats'))) {
+            throw new InvalidInputException("Unsupported gold karat: {$karat}");
         }
-        $this->goldPrice = $goldPrice;
+
+        if ($weight < 0) {
+            throw new InvalidInputException('Gold weight cannot be negative');
+        }
+
+        $this->assets['gold'][] = [
+            'karat'  => $karat,
+            'weight' => $weight,
+        ];
+
         return $this;
     }
 
-    /**
-     * Set silver price per gram
-     *
-     * @param float $silverPrice
-     * @return self
-     * @throws InvalidInputException
-     */
-    public function setSilverPrice(float $silverPrice): self
+    public function setSilverWeight(float $weight): self
     {
-        if ($silverPrice < 0) {
-            throw InvalidInputException::negativeValue('silver price');
+        if ($weight < 0) {
+            throw new InvalidInputException('Silver weight cannot be negative');
         }
-        $this->silverPrice = $silverPrice;
+        $this->assets['silver'] = $weight;
         return $this;
     }
 
-    /**
-     * Set business assets for zakat calculation
-     *
-     * @param array $assets
-     * @return self
-     */
     public function setBusinessAssets(array $assets): self
     {
-        $this->businessAssets = $assets;
+        foreach ($assets as $key => $value) {
+            if ($value < 0) {
+                throw new InvalidInputException("Business asset '{$key}' cannot be negative");
+            }
+        }
+        $this->assets['business'] = $assets;
         return $this;
     }
 
-    /**
-     * Set agricultural products for zakat calculation
-     *
-     * @param array $products
-     * @return self
-     */
     public function setAgriculturalProducts(array $products): self
     {
-        $this->agriculturalProducts = $products;
-        return $this;
-    }
-
-    /**
-     * Set calculation method
-     *
-     * @param string $method
-     * @return self
-     * @throws InvalidInputException
-     */
-    public function setCalculationMethod(string $method): self
-    {
-        if (! in_array($method, ['hanafi', 'shafi', 'maliki', 'hanbali'])) {
-            throw InvalidInputException::invalidCalculationMethod($method);
+        foreach ($products as $type => $product) {
+            if ($product['weight'] < 0) {
+                throw new InvalidInputException("Agricultural product '{$type}' weight cannot be negative");
+            }
         }
-        $this->calculationMethod = $method;
+        $this->assets['agricultural'] = $products;
         return $this;
     }
 
-    /**
-     * Calculate zakat based on all set values
-     *
-     * @return array
-     */
     public function calculate(): array
     {
-        $goldValue         = $this->calculateGoldValue();
-        $silverValue       = $this->calculateSilverValue();
-        $businessValue     = $this->calculateBusinessValue();
-        $agriculturalValue = $this->calculateAgriculturalValue();
-
-        $total       = $this->cash + $goldValue + $silverValue + $businessValue + $agriculturalValue;
-        $nisab       = $this->calculateNisab();
-        $zakatDue    = $total >= $nisab;
-        $zakatAmount = $zakatDue ? $total * 0.025 : 0;
-
-        return [
-            'cash'               => $this->formatAmount($this->cash),
-            'gold_value'         => $this->formatAmount($goldValue),
-            'silver_value'       => $this->formatAmount($silverValue),
-            'business_value'     => $this->formatAmount($businessValue),
-            'agricultural_value' => $this->formatAmount($agriculturalValue),
-            'total'              => $this->formatAmount($total),
-            'nisab'              => $this->formatAmount($nisab),
-            'zakat_due'          => $zakatDue,
-            'zakat_amount'       => $this->formatAmount($zakatAmount),
-            'calculation_method' => $this->calculationMethod,
+        $result = [
+            'total_zakat'        => 0,
+            'calculation_method' => $this->config->get('zakat.calculation_methods.default'),
+            'details'            => [],
         ];
-    }
 
-    /**
-     * Calculate the value of gold items
-     *
-     * @return float
-     */
-    protected function calculateGoldValue(): float
-    {
-        $goldValue = 0;
-        foreach ($this->goldItems as $item) {
-            $weight     = $item['weight'];
-            $karat      = $item['karat'];
-            $pureWeight = $weight * ($karat / 24);
-            $goldValue += $pureWeight * $this->goldPrice;
+        // Calculate cash zakat
+        if ($this->assets['cash'] > 0) {
+            $cashZakat = $this->calculateCashZakat();
+            $result['total_zakat'] += $cashZakat;
+            $result['details']['cash'] = [
+                'amount' => $this->assets['cash'],
+                'zakat'  => $cashZakat,
+            ];
         }
-        return $goldValue;
-    }
 
-    /**
-     * Calculate the value of silver
-     *
-     * @return float
-     */
-    protected function calculateSilverValue(): float
-    {
-        return $this->silverWeight * $this->silverPrice;
-    }
-
-    /**
-     * Calculate the value of business assets
-     *
-     * @return float
-     */
-    protected function calculateBusinessValue(): float
-    {
-        return array_sum($this->businessAssets);
-    }
-
-    /**
-     * Calculate the value of agricultural products
-     *
-     * @return float
-     */
-    protected function calculateAgriculturalValue(): float
-    {
-        $value = 0;
-        foreach ($this->agriculturalProducts as $product) {
-            $rate = $product['irrigated'] ?
-            $this->config->get('zakat.agricultural.irrigated_rate') :
-            $this->config->get('zakat.agricultural.non_irrigated_rate');
-            $value += $product['value'] * $rate;
+        // Calculate gold zakat
+        if (! empty($this->assets['gold'])) {
+            $goldZakat = $this->calculateGoldZakat();
+            $result['total_zakat'] += $goldZakat;
+            $result['details']['gold'] = [
+                'items' => $this->assets['gold'],
+                'zakat' => $goldZakat,
+            ];
         }
-        return $value;
-    }
 
-    /**
-     * Calculate the nisab threshold
-     *
-     * @return float
-     */
-    protected function calculateNisab(): float
-    {
-        return $this->config->get('zakat.nisab.gold') * $this->goldPrice;
-    }
-
-    /**
-     * Format amount with proper precision
-     *
-     * @param float $amount
-     * @return float
-     */
-    protected function formatAmount(float $amount): float
-    {
-        return round($amount, $this->config->get('zakat.precision', 2));
-    }
-
-    /**
-     * Load default prices from cache or config
-     */
-    protected function loadDefaultPrices(): void
-    {
-        if ($this->config->get('zakat.cache.enabled')) {
-            $this->goldPrice = $this->cache->remember('gold_price', $this->config->get('zakat.cache.ttl'), function () {
-                return $this->config->get('zakat.default_prices.gold');
-            });
-            $this->silverPrice = $this->cache->remember('silver_price', $this->config->get('zakat.cache.ttl'), function () {
-                return $this->config->get('zakat.default_prices.silver');
-            });
-        } else {
-            $this->goldPrice   = $this->config->get('zakat.default_prices.gold');
-            $this->silverPrice = $this->config->get('zakat.default_prices.silver');
+        // Calculate silver zakat
+        if ($this->assets['silver'] > 0) {
+            $silverZakat = $this->calculateSilverZakat();
+            $result['total_zakat'] += $silverZakat;
+            $result['details']['silver'] = [
+                'weight' => $this->assets['silver'],
+                'zakat'  => $silverZakat,
+            ];
         }
+
+        // Calculate business zakat
+        if (! empty($this->assets['business'])) {
+            $businessZakat = $this->calculateBusinessZakat();
+            $result['total_zakat'] += $businessZakat;
+            $result['details']['business'] = [
+                'assets' => $this->assets['business'],
+                'zakat'  => $businessZakat,
+            ];
+        }
+
+        // Calculate agricultural zakat
+        if (! empty($this->assets['agricultural'])) {
+            $agriculturalZakat = $this->calculateAgriculturalZakat();
+            $result['total_zakat'] += $agriculturalZakat;
+            $result['details']['agricultural'] = [
+                'products' => $this->assets['agricultural'],
+                'zakat'    => $agriculturalZakat,
+            ];
+        }
+
+        return $result;
+    }
+
+    protected function calculateCashZakat(): float
+    {
+        $nisabValue = $this->nisabService->getGoldNisabValue();
+        if ($this->assets['cash'] < $nisabValue) {
+            return 0;
+        }
+
+        return $this->assets['cash'] * 0.025;
+    }
+
+    protected function calculateGoldZakat(): float
+    {
+        $totalValue = 0;
+        foreach ($this->assets['gold'] as $item) {
+            $totalValue += $item['weight'] * $this->nisabService->getGoldPrice();
+        }
+
+        $nisabValue = $this->nisabService->getGoldNisabValue();
+        if ($totalValue < $nisabValue) {
+            return 0;
+        }
+
+        return $totalValue * 0.025;
+    }
+
+    protected function calculateSilverZakat(): float
+    {
+        $totalValue = $this->assets['silver'] * $this->nisabService->getSilverPrice();
+        $nisabValue = $this->nisabService->getSilverNisabValue();
+
+        if ($totalValue < $nisabValue) {
+            return 0;
+        }
+
+        return $totalValue * 0.025;
+    }
+
+    protected function calculateBusinessZakat(): float
+    {
+        $totalValue = array_sum($this->assets['business']);
+        $nisabValue = $this->nisabService->getGoldNisabValue();
+
+        if ($totalValue < $nisabValue) {
+            return 0;
+        }
+
+        return $totalValue * 0.025;
+    }
+
+    protected function calculateAgriculturalZakat(): float
+    {
+        $totalZakat = 0;
+
+        foreach ($this->assets['agricultural'] as $type => $product) {
+            $nisabWeight = $this->nisabService->getAgriculturalNisabWeight($type);
+            if ($product['weight'] < $nisabWeight) {
+                continue;
+            }
+
+            $rate = $this->nisabService->getAgriculturalZakatRate($product['is_irrigated']);
+            $totalZakat += $product['weight'] * $rate;
+        }
+
+        return $totalZakat;
     }
 }
